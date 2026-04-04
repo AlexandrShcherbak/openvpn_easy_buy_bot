@@ -28,7 +28,7 @@ from bot.keyboards.inline import (
     main_menu_kb
 )
 from bot.states import SupportState
-from integrations.payments.provider import get_payment_provider, CryptoBotProvider
+from integrations.payments.provider import get_payment_provider, CryptoBotProvider, SeverPayProvider
 from database.db import SessionLocal
 from aiogram.utils.formatting import Text, Bold
 from aiogram.enums import ParseMode
@@ -59,11 +59,8 @@ def _provider_title(provider_name: str) -> str:
         'freekassa': 'FreeKassa',
         'platega': 'Platega',
         'severpay': 'SeverPay',
-        'cryptocloud': 'CryptoCloud',
-        'crystalpay': 'CrystalPay',
         'cryptobot': 'CryptoBot',
         'donationalerts': 'DonationAlerts',
-        'boosty': 'Boosty',
     }
     return titles.get(provider_name, provider_name)
 
@@ -296,9 +293,25 @@ async def check_payment_status(call: CallbackQuery) -> None:
                     provider = CryptoBotProvider(cryptobot_token)
                     status = await provider.get_status(payment.provider_payment_id)
                     is_paid = status.state == 'paid'
-            elif payment.provider in {'donationalerts', 'freekassa', 'platega', 'severpay', 'cryptocloud', 'crystalpay', 'boosty'}:
-                # Для DonationAlerts нужно настроить webhook
-                # Пока пользователь подтверждает вручную
+            elif payment.provider == 'severpay':
+                # Для SeverPay проверка через API
+                if payment.provider_payment_id and settings.severpay_mid and settings.severpay_token:
+                    provider = SeverPayProvider(
+                        settings.severpay_base_url, 
+                        settings.severpay_mid, 
+                        settings.severpay_token
+                    )
+                    status = await provider.get_status(payment.provider_payment_id)
+                    is_paid = status.state == 'paid'
+            elif payment.provider in {'donationalerts', 'freekassa', 'platega'}:
+                # Для этих провайдеров оплата подтверждается вручную через webhook
+                await call.answer(
+                    "Оплата подтверждается вручную. Ожидайте подтверждения от поддержки.",
+                    show_alert=True
+                )
+                return
+            else:
+                # Для остальных провайдеров - ручное подтверждение
                 await call.answer(
                     "Для выбранного способа оплата подтверждается вручную. "
                     "Ожидайте подтверждения от поддержки.",
@@ -368,3 +381,55 @@ async def paid_handler_deprecated(call: CallbackQuery) -> None:
         'Используйте новый способ оплаты через кнопки.',
         show_alert=True
     )
+
+
+@router.callback_query(F.data == "legal_docs")
+async def legal_docs(call: CallbackQuery) -> None:
+    """Обработчик кнопки документы и контакты"""
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    # Получаем ссылки из настроек
+    privacy_url = getattr(settings, 'privacy_url', 'https://telegra.ph/Politika-konfidencialnosti-04-01-26')
+    terms_url = getattr(settings, 'terms_url', 'https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19')
+    support_email = getattr(settings, 'support_email', 'scherbakalexanders@gmail.com')
+    owner_contact = getattr(settings, 'owner_contact', 'https://t.me/alexandrshcherbak')
+    
+    # Проверяем, что URL начинаются с http:// или https://
+    if not privacy_url.startswith(('http://', 'https://')):
+        privacy_url = 'https://' + privacy_url.lstrip('/')
+    if not terms_url.startswith(('http://', 'https://')):
+        terms_url = 'https://' + terms_url.lstrip('/')
+    if owner_contact and not owner_contact.startswith(('http://', 'https://', 'tg://', 't.me/')):
+        owner_contact = 'https://' + owner_contact
+    
+    # Формируем текст
+    text = (
+        "📄 <b>Документы и контакты</b>\n\n"
+        "🔐 <b>Политика конфиденциальности</b>\n"
+        f"{privacy_url}\n\n"
+        "📜 <b>Пользовательское соглашение</b>\n"
+        f"{terms_url}\n\n"
+        "📧 <b>Email поддержки</b>\n"
+        f"{support_email}\n\n"
+        "👤 <b>Контакты владельца</b>\n"
+        f"{owner_contact}"
+    )
+    
+    # Создаем клавиатуру со ссылками
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔐 Политика конфиденциальности", url=privacy_url)],
+            [InlineKeyboardButton(text="📜 Пользовательское соглашение", url=terms_url)],
+            [InlineKeyboardButton(text="✉️ Email поддержки", callback_data="support")],
+            [InlineKeyboardButton(text="👤 Контакты владельца", url=owner_contact if owner_contact.startswith(('http://', 'https://')) else "https://t.me/alexandrshcherbak")],
+            [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
+        ]
+    )
+    
+    await call.message.edit_text(
+        text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True
+    )
+    await call.answer()

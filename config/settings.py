@@ -1,6 +1,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic.v1 import BaseSettings, Field, root_validator
 
@@ -54,8 +55,8 @@ def _load_env_files() -> None:
         if legacy_token:
             os.environ['CRYPTOBOT_TOKEN'] = legacy_token
 
-    if 'DONATION_BASE_URL' not in os.environ and 'DONATIONALERTS_URL' in os.environ:
-        os.environ['DONATION_BASE_URL'] = os.environ['DONATIONALERTS_URL']
+    if 'DONATIONALERTS_BASE_URL' not in os.environ and 'DONATIONALERTS_URL' in os.environ:
+        os.environ['DONATIONALERTS_BASE_URL'] = os.environ['DONATIONALERTS_URL']
 
 
 class Settings(BaseSettings):
@@ -80,34 +81,49 @@ class Settings(BaseSettings):
     owner_contact: str = Field(default='owner@example.com', env='OWNER_CONTACT')
     telegram_bot_url: str = Field(default='https://t.me/wireguard_easy_buy_bot', env='TELEGRAM_BOT_URL')
 
-    terms_url: str | None = Field(default=None, env='TERMS_URL')
-    privacy_url: str | None = Field(default=None, env='PRIVACY_URL')
-    contacts_url: str | None = Field(default=None, env='CONTACTS_URL')
+    # URLs для документов (обновлены ссылки)
+    terms_url: str = Field(default='https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19', env='TERMS_URL')
+    privacy_url: str = Field(default='https://telegra.ph/Politika-konfidencialnosti-04-01-26', env='PRIVACY_URL')
+    contacts_url: str = Field(default='https://t.me/alexandrshcherbak', env='CONTACTS_URL')
 
+    # FreeKassa
     freekassa_shop_id: str | None = Field(default=None, env='FREEKASSA_SHOP_ID')
     freekassa_secret_word_1: str | None = Field(default=None, env='FREEKASSA_SECRET_WORD_1')
     freekassa_secret_word_2: str | None = Field(default=None, env='FREEKASSA_SECRET_WORD_2')
 
+    # Platega
     platega_base_url: str | None = Field(default=None, env='PLATEGA_BASE_URL')
     platega_shop_id: str | None = Field(default=None, env='PLATEGA_SHOP_ID')
     platega_api_key: str | None = Field(default=None, env='PLATEGA_API_KEY')
 
+    # SeverPay
     severpay_base_url: str = Field(default='https://severpay.io/api/merchant', env='SEVERPAY_BASE_URL')
     severpay_mid: int | None = Field(default=None, env='SEVERPAY_MID')
     severpay_token: str | None = Field(default=None, env='SEVERPAY_TOKEN')
 
+    # CryptoCloud (оставлен для совместимости, но не используется в UI)
     cryptocloud_base_url: str = Field(default='https://api.cryptocloud.plus/v2', env='CRYPTOCLOUD_BASE_URL')
-    cryptocloud_api_key: str | None = Field(default=None, env='CRYPTOCLOUD_API_KEY')
+    cryptocloud_api_key: Optional[str] = Field(default=None, env='CRYPTOCLOUD_API_KEY')
+    cryptocloud_shop_id: Optional[str] = Field(default=None, env='CRYPTOCLOUD_SHOP_ID')
+    cryptocloud_test_mode: bool = Field(default=True, env='CRYPTOCLOUD_TEST_MODE')
 
+    # CrystalPay (оставлен для совместимости, но не используется в UI)
     crystalpay_base_url: str | None = Field(default=None, env='CRYSTALPAY_BASE_URL')
+    crystalpay_api_url: str = Field(default='https://api.crystalpay.io/v3', env='CRYSTALPAY_API_URL')
+    crystalpay_auth_login: str | None = Field(default=None, env='CRYSTALPAY_AUTH_LOGIN')
+    crystalpay_auth_secret: str | None = Field(default=None, env='CRYSTALPAY_AUTH_SECRET')
     crystalpay_token: str | None = Field(default=None, env='CRYSTALPAY_TOKEN')
+    crystalpay_salt: str | None = Field(default=None, env='CRYSTALPAY_SALT')
+    crystalpay_shop_id: str | None = Field(default=None, env='CRYSTALPAY_SHOP_ID')
+    crystalpay_callback_url: str | None = Field(default=None, env='CRYSTALPAY_CALLBACK_URL')
 
-    # Вебхуки отключены в polling-режиме, поля оставлены для совместимости конфигов.
+    # Вебхуки
     sendler_webhook_enabled: bool = Field(default=False, env='SENDLER_WEBHOOK_ENABLED')
     sendler_webhook_host: str = Field(default='0.0.0.0', env='SENDLER_WEBHOOK_HOST')
     sendler_webhook_port: int = Field(default=8080, env='SENDLER_WEBHOOK_PORT')
     sendler_webhook_secret: str | None = Field(default=None, env='SENDLER_WEBHOOK_SECRET')
 
+    # План подписки
     trial_days: int = Field(default=1, env='TRIAL_DAYS')
     default_plan_days: int = Field(default=180, env='DEFAULT_PLAN_DAYS')
     default_plan_price_rub: int = Field(default=600, env='DEFAULT_PLAN_PRICE_RUB')
@@ -128,8 +144,24 @@ class Settings(BaseSettings):
                 or values.get('payment_token')
             )
 
-        if not values.get('DONATION_BASE_URL') and not values.get('donation_base_url'):
-            values['DONATION_BASE_URL'] = values.get('DONATIONALERTS_URL') or values.get('donationalerts_url')
+        if not values.get('DONATIONALERTS_BASE_URL') and not values.get('donationalerts_base_url'):
+            values['DONATIONALERTS_BASE_URL'] = values.get('DONATIONALERTS_URL') or values.get('donationalerts_url')
+        
+        # Fix for PRIVACY_URL and TERMS_URL - обновляем на новые ссылки
+        if values.get('PRIVACY_URL') in ('/privacy', 'https://telegra.ph/Politika-konfidencialnosti-08-15-17'):
+            values['PRIVACY_URL'] = 'https://telegra.ph/Politika-konfidencialnosti-04-01-26'
+        if values.get('TERMS_URL') in ('/terms', 'https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10'):
+            values['TERMS_URL'] = 'https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19'
+        if values.get('CONTACTS_URL') == '/contacts':
+            values['CONTACTS_URL'] = 'https://t.me/alexandrshcherbak'
+        
+        # Для CrystalPay: используем shop_id как auth_login если не задан отдельно
+        if not values.get('CRYSTALPAY_AUTH_LOGIN') and values.get('CRYSTALPAY_SHOP_ID'):
+            values['CRYSTALPAY_AUTH_LOGIN'] = values.get('CRYSTALPAY_SHOP_ID')
+        
+        # Для CrystalPay: используем token как auth_secret если не задан отдельно
+        if not values.get('CRYSTALPAY_AUTH_SECRET') and values.get('CRYSTALPAY_TOKEN'):
+            values['CRYSTALPAY_AUTH_SECRET'] = values.get('CRYSTALPAY_TOKEN')
 
         return values
 

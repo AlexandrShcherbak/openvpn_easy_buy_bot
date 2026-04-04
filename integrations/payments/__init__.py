@@ -1,9 +1,10 @@
 from .provider import (
     CryptoBotProvider,
-    DonationAlertsProvider,
+    DonationAlertsProvider,  # Теперь этот импорт будет работать
     Invoice,
     PaymentStatus,
     StubPaymentProvider,
+    get_payment_provider,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     'Invoice',
     'PaymentStatus',
     'StubPaymentProvider',
+    'get_payment_provider',
 ]
