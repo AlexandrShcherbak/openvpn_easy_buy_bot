@@ -102,6 +102,9 @@ class Settings(BaseSettings):
     severpay_base_url: str = Field(default='https://severpay.io/api/merchant', env='SEVERPAY_BASE_URL')
     severpay_mid: int | None = Field(default=None, env='SEVERPAY_MID')
     severpay_token: str | None = Field(default=None, env='SEVERPAY_TOKEN')
+    severpay_client_email: str | None = Field(default=None, env='SEVERPAY_CLIENT_EMAIL')
+    severpay_return_url: str | None = Field(default=None, env='SEVERPAY_RETURN_URL')
+    severpay_lifetime_minutes: int | None = Field(default=None, env='SEVERPAY_LIFETIME_MINUTES')
 
     # CryptoCloud (оставлен для совместимости, но не используется в UI)
     cryptocloud_base_url: str = Field(default='https://api.cryptocloud.plus/v2', env='CRYPTOCLOUD_BASE_URL')

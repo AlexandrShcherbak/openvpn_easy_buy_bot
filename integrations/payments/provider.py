@@ -143,10 +143,21 @@ class FreekassaProvider:
 
 
 class SeverPayProvider:
-    def __init__(self, base_url: str, mid: int, token: str) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        mid: int,
+        token: str,
+        client_email: str | None = None,
+        return_url: str | None = None,
+        lifetime_minutes: int | None = None,
+    ) -> None:
         self.base_url = base_url.rstrip('/')
         self.mid = mid
         self.token = token
+        self.client_email = client_email
+        self.return_url = return_url
+        self.lifetime_minutes = lifetime_minutes
         logger.info(f"SeverPayProvider initialized with base_url: {base_url}, mid: {mid}")
 
     def _generate_sign(self, params: dict) -> str:
@@ -180,19 +191,21 @@ class SeverPayProvider:
 
     async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
         order_id = payload or f"sp_{user_id}_{int(time.time())}"
-        
-        # Формируем параметры для запроса согласно документации SeverPay
+
+        client_email = self.client_email or f"user{user_id}@example.com"
         params = {
             'mid': self.mid,
             'order_id': order_id,
             'amount': float(amount_rub),
             'currency': 'RUB',
-            'description': f'VPN subscription for user {user_id}',
             'client_id': str(user_id),
-            'email': f"user{user_id}@example.com",  # Обязательное поле email
-            'client_email': f"user{user_id}@example.com",  # Альтернативное название поля
+            'client_email': client_email,
             'salt': str(int(time.time()))
         }
+        if self.return_url:
+            params['url_return'] = self.return_url
+        if self.lifetime_minutes and 30 <= self.lifetime_minutes <= 4320:
+            params['lifetime'] = int(self.lifetime_minutes)
         
         logger.info(f"Creating SeverPay invoice for user {user_id}, amount: {amount_rub} RUB")
         logger.debug(f"SeverPay request params: {params}")
@@ -615,7 +628,14 @@ def get_payment_provider(provider_name: str, settings):
         if not settings.severpay_mid or not settings.severpay_token:
             raise ValueError("SeverPay credentials not configured")
         logger.info(f"Creating SeverPayProvider with mid: {settings.severpay_mid}")
-        return SeverPayProvider(settings.severpay_base_url, settings.severpay_mid, settings.severpay_token)
+        return SeverPayProvider(
+            settings.severpay_base_url,
+            settings.severpay_mid,
+            settings.severpay_token,
+            client_email=getattr(settings, "severpay_client_email", None),
+            return_url=getattr(settings, "severpay_return_url", None),
+            lifetime_minutes=getattr(settings, "severpay_lifetime_minutes", None),
+        )
 
     if provider == "cryptocloud":
         if not settings.cryptocloud_api_key:
