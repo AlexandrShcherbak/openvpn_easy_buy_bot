@@ -44,6 +44,8 @@
    PLATEGA_BASE_URL=
    PLATEGA_SHOP_ID=
    PLATEGA_API_KEY=
+   PLATEGA_CREATE_INVOICE_PATH=/transaction/process
+   PLATEGA_SUCCESS_URL=
    SEVERPAY_MID=
    SEVERPAY_TOKEN=
    CRYPTOCLOUD_API_KEY=
@@ -99,10 +101,13 @@ python main.py
 - `POST /webhooks/cryptobot` — успешные события оплаты Crypto Bot.
 - `POST /webhooks/donation` — подтверждение рублёвой оплаты от донат-сервиса.
 - `POST /webhooks/sendler` — лиды/события из Sendler.
+- `POST /webhooks/platega` — callback от Platega (статусы `CONFIRMED/CANCELED/CHARGEBACK`).
 
 ## Важно
 - Для безопасности включайте `SENDLER_WEBHOOK_SECRET` и проверяйте секрет в webhook-запросах.
 - Для части платежных провайдеров статус подтверждается вручную поддержкой.
+- Для Platega укажите в личном кабинете callback URL вида `https://<ваш-домен>/webhooks/platega`.
+- Цена подписки по умолчанию — `600 ₽` (`DEFAULT_PLAN_PRICE_RUB=600`).
 
 ## Юридические документы
 - Политика конфиденциальности: `legal/privacy-policy.md`
