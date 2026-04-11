@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic.v1 import BaseSettings, Field, root_validator
+from pydantic.v1 import BaseSettings, Field, ValidationError, root_validator
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILES = (
@@ -95,11 +95,16 @@ class Settings(BaseSettings):
     platega_base_url: str | None = Field(default=None, env='PLATEGA_BASE_URL')
     platega_shop_id: str | None = Field(default=None, env='PLATEGA_SHOP_ID')
     platega_api_key: str | None = Field(default=None, env='PLATEGA_API_KEY')
+    platega_create_invoice_path: str = Field(default='/transaction/process', env='PLATEGA_CREATE_INVOICE_PATH')
+    platega_success_url: str | None = Field(default=None, env='PLATEGA_SUCCESS_URL')
 
     # SeverPay
     severpay_base_url: str = Field(default='https://severpay.io/api/merchant', env='SEVERPAY_BASE_URL')
     severpay_mid: int | None = Field(default=None, env='SEVERPAY_MID')
     severpay_token: str | None = Field(default=None, env='SEVERPAY_TOKEN')
+    severpay_client_email: str | None = Field(default=None, env='SEVERPAY_CLIENT_EMAIL')
+    severpay_return_url: str | None = Field(default=None, env='SEVERPAY_RETURN_URL')
+    severpay_lifetime_minutes: int | None = Field(default=None, env='SEVERPAY_LIFETIME_MINUTES')
 
     # CryptoCloud (оставлен для совместимости, но не используется в UI)
     cryptocloud_base_url: str = Field(default='https://api.cryptocloud.plus/v2', env='CRYPTOCLOUD_BASE_URL')
@@ -172,4 +177,28 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     _load_env_files()
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        required_fields = {
+            "bot_token": "BOT_TOKEN",
+            "wireguard_api_url": "WIREGUARD_API_URL",
+            "wireguard_api_token": "WIREGUARD_API_TOKEN",
+            "wireguard_server_public_key": "WIREGUARD_SERVER_PUBLIC_KEY",
+            "wireguard_server_endpoint": "WIREGUARD_SERVER_ENDPOINT",
+        }
+
+        missing_env_names: list[str] = []
+        for err in exc.errors():
+            field_name = ".".join(str(part) for part in err.get("loc", []))
+            env_name = required_fields.get(field_name, field_name.upper())
+            if env_name not in missing_env_names:
+                missing_env_names.append(env_name)
+
+        hint = (
+            "Не удалось загрузить обязательные переменные окружения.\n"
+            f"Отсутствуют: {', '.join(missing_env_names)}\n\n"
+            "Создайте файл .env в корне проекта (или env) и заполните эти значения.\n"
+            "См. пример в README.md (раздел 'Быстрый старт')."
+        )
+        raise RuntimeError(hint) from exc

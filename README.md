@@ -41,11 +41,16 @@
    FREEKASSA_SHOP_ID=
    FREEKASSA_SECRET_WORD_1=
    FREEKASSA_SECRET_WORD_2=
-   PLATEGA_BASE_URL=
+   PLATEGA_BASE_URL=https://app.platega.io
    PLATEGA_SHOP_ID=
    PLATEGA_API_KEY=
+   PLATEGA_CREATE_INVOICE_PATH=/transaction/process
+   PLATEGA_SUCCESS_URL=
    SEVERPAY_MID=
    SEVERPAY_TOKEN=
+   SEVERPAY_CLIENT_EMAIL=
+   SEVERPAY_RETURN_URL=
+   SEVERPAY_LIFETIME_MINUTES=
    CRYPTOCLOUD_API_KEY=
    CRYSTALPAY_BASE_URL=
    CRYSTALPAY_TOKEN=
@@ -99,10 +104,22 @@ python main.py
 - `POST /webhooks/cryptobot` — успешные события оплаты Crypto Bot.
 - `POST /webhooks/donation` — подтверждение рублёвой оплаты от донат-сервиса.
 - `POST /webhooks/sendler` — лиды/события из Sendler.
+- `POST /webhooks/platega` — callback от Platega (статусы `CONFIRMED/CANCELED/CHARGEBACK`).
 
 ## Важно
 - Для безопасности включайте `SENDLER_WEBHOOK_SECRET` и проверяйте секрет в webhook-запросах.
 - Для части платежных провайдеров статус подтверждается вручную поддержкой.
+- Для Platega укажите в личном кабинете callback URL вида `https://<ваш-домен>/webhooks/platega`.
+- Для Platega ссылка на оплату берётся из поля `redirect` ответа `POST /transaction/process`.
+- Цена подписки по умолчанию — `600 ₽` (`DEFAULT_PLAN_PRICE_RUB=600`).
+
+## Если `python main.py` падает с ошибкой `ValidationError`
+- Проверьте, что в `.env` (или `env`) заполнены обязательные переменные:
+  - `BOT_TOKEN`
+  - `WIREGUARD_API_URL`
+  - `WIREGUARD_API_TOKEN`
+  - `WIREGUARD_SERVER_PUBLIC_KEY`
+  - `WIREGUARD_SERVER_ENDPOINT`
 
 ## Юридические документы
 - Политика конфиденциальности: `legal/privacy-policy.md`
