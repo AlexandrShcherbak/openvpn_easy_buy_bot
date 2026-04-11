@@ -3,7 +3,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic.v1 import BaseSettings, Field, root_validator
+from pydantic.v1 import BaseSettings, Field, ValidationError, root_validator
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ENV_FILES = (
