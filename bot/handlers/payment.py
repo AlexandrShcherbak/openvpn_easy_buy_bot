@@ -1,5 +1,6 @@
 from aiohttp import web
 from aiogram import Router
+from sqlalchemy import or_, select
 
 from bot.bot_instance import bot
 from config.config import settings
@@ -7,6 +8,18 @@ from database.crud import get_payment, get_subscription, mark_payment_paid
 from database.db import SessionLocal
 
 router = Router(name='payment_router')
+
+
+def _extract_payment_id_from_order_id(order_id: str | None) -> int | None:
+    if not order_id:
+        return None
+    # Формат payload: subscription:{subscription_id}:payment:{payment_id}
+    if ":payment:" not in order_id:
+        return None
+    try:
+        return int(order_id.rsplit(":payment:", 1)[-1])
+    except ValueError:
+        return None
 
 
 async def cryptobot_webhook(request: web.Request) -> web.Response:
@@ -17,7 +30,6 @@ async def cryptobot_webhook(request: web.Request) -> web.Response:
 
     invoice_id = str(update.get('invoice_id', ''))
     async with SessionLocal() as session:
-        from sqlalchemy import select
         from database.models.payment import Payment
 
         payment = (
@@ -103,9 +115,74 @@ async def sendler_webhook(request: web.Request) -> web.Response:
     return web.json_response({'ok': True})
 
 
+async def platega_webhook(request: web.Request) -> web.Response:
+    incoming_merchant_id = request.headers.get('X-MerchantId')
+    incoming_secret = request.headers.get('X-Secret')
+    if incoming_merchant_id != settings.platega_shop_id or incoming_secret != settings.platega_api_key:
+        return web.json_response({'ok': False, 'error': 'unauthorized'}, status=401)
+
+    payload = await request.json()
+    status = str(payload.get('status', '')).upper()
+    if status not in {'CONFIRMED', 'CANCELED', 'CHARGEBACK'}:
+        return web.json_response({'ok': True})
+
+    transaction_id = str(
+        payload.get('transaction_id')
+        or payload.get('invoice_id')
+        or payload.get('id')
+        or ''
+    )
+    order_id = str(payload.get('order_id') or payload.get('payload') or '')
+    internal_payment_id = _extract_payment_id_from_order_id(order_id)
+
+    async with SessionLocal() as session:
+        from database.models.payment import Payment
+
+        payment = None
+        if internal_payment_id:
+            payment = await get_payment(session, internal_payment_id)
+
+        if not payment and transaction_id:
+            payment = (
+                await session.execute(
+                    select(Payment).where(
+                        Payment.provider == 'platega',
+                        or_(Payment.provider_payment_id == transaction_id, Payment.provider_payment_id == order_id),
+                    )
+                )
+            ).scalar_one_or_none()
+
+        if not payment:
+            return web.json_response({'ok': True})
+
+        if status == 'CONFIRMED':
+            if payment.status == 'paid':
+                return web.json_response({'ok': True})
+            subscription = await get_subscription(session, payment.subscription_id)
+            await mark_payment_paid(session, payment.id, transaction_id or order_id or payment.provider_payment_id)
+            user_id = payment.user.telegram_id
+        else:
+            payment.status = 'canceled'
+            await session.commit()
+            return web.json_response({'ok': True})
+
+    support_contact = getattr(settings, "support_contact", "@support_bot")
+    if subscription:
+        await bot.send_message(
+            user_id,
+            "✅ Оплата подтверждена.\n\n"
+            f"🤖 Перейдите в Telegram-бот: {settings.telegram_bot_url}\n"
+            "📩 Отправьте чек в личные сообщения поддержки, чтобы получить конфигурацию и QR-код.\n"
+            f"Контакт поддержки: {support_contact}"
+        )
+
+    return web.json_response({'ok': True})
+
+
 async def create_webhook_app() -> web.Application:
     app = web.Application()
     app.router.add_post('/webhooks/cryptobot', cryptobot_webhook)
     app.router.add_post('/webhooks/donation', donation_webhook)
     app.router.add_post('/webhooks/sendler', sendler_webhook)
+    app.router.add_post('/webhooks/platega', platega_webhook)
     return app
