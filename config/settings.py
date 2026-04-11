@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     platega_base_url: str | None = Field(default=None, env='PLATEGA_BASE_URL')
     platega_shop_id: str | None = Field(default=None, env='PLATEGA_SHOP_ID')
     platega_api_key: str | None = Field(default=None, env='PLATEGA_API_KEY')
-    platega_create_invoice_path: str = Field(default='/transaction/process', env='PLATEGA_CREATE_INVOICE_PATH')
+    platega_create_invoice_path: str = Field(default='/api/v1/invoices', env='PLATEGA_CREATE_INVOICE_PATH')
     platega_success_url: str | None = Field(default=None, env='PLATEGA_SUCCESS_URL')
 
     # SeverPay
