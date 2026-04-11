@@ -308,7 +308,7 @@ class PlategaProvider:
         base_url: str,
         merchant_id: str,
         api_key: str,
-        create_invoice_path: str = "/transaction/process",
+        create_invoice_path: str = "/api/v1/invoices",
         success_url: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -353,19 +353,19 @@ class PlategaProvider:
         request_data: dict[str, Any] = {
             "amount": amount_rub,
             "currency": "RUB",
-            "orderId": order_id,
+            "order_id": order_id,
             "description": f"VPN subscription for user {user_id}",
         }
         if self.success_url:
-            request_data["successUrl"] = self.success_url
+            request_data["success_url"] = self.success_url
 
         headers = {
             "Content-Type": "application/json",
             "X-MerchantId": self.merchant_id,
             "X-Secret": self.api_key,
-            "Accept": "application/json",
         }
         url = f"{self.base_url}{self.create_invoice_path}"
+
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=request_data, headers=headers, timeout=30) as resp:
                 response_text = await resp.text()
@@ -377,16 +377,12 @@ class PlategaProvider:
                 except json.JSONDecodeError as exc:
                     raise RuntimeError(f"Platega invalid JSON response: {response_text}") from exc
 
-        invoice_id = (
-            response_data.get("transactionId")
-            or response_data.get("transaction_id")
-            or self._extract_invoice_id(response_data)
-        )
-        pay_url = response_data.get("redirect") or self._extract_pay_url(response_data)
+        invoice_id = self._extract_invoice_id(response_data)
+        pay_url = self._extract_pay_url(response_data)
         if not invoice_id or not pay_url:
-            raise RuntimeError(f"Platega response missing transactionId/redirect: {response_data}")
+            raise RuntimeError(f"Platega response missing invoice_id or pay_url: {response_data}")
 
-        return Invoice(invoice_id=str(invoice_id), pay_url=str(pay_url), amount=float(amount_rub), currency="RUB")
+        return Invoice(invoice_id=invoice_id, pay_url=pay_url, amount=float(amount_rub), currency="RUB")
 
     async def get_status(self, invoice_id: str) -> PaymentStatus:
         # Статус платежа обновляется через callback/webhook.
@@ -682,7 +678,7 @@ def get_payment_provider(provider_name: str, settings):
             base_url=settings.platega_base_url,
             merchant_id=settings.platega_shop_id,
             api_key=settings.platega_api_key,
-            create_invoice_path=getattr(settings, "platega_create_invoice_path", "/transaction/process"),
+            create_invoice_path=getattr(settings, "platega_create_invoice_path", "/api/v1/invoices"),
             success_url=getattr(settings, "platega_success_url", None),
         )
 
