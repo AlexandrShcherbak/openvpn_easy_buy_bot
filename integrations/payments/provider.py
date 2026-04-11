@@ -300,6 +300,99 @@ class SeverPayProvider:
                 )
 
 
+class PlategaProvider:
+    """Провайдер для Platega API."""
+
+    def __init__(
+        self,
+        base_url: str,
+        merchant_id: str,
+        api_key: str,
+        create_invoice_path: str = "/transaction/process",
+        success_url: str | None = None,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.merchant_id = merchant_id
+        self.api_key = api_key
+        self.create_invoice_path = create_invoice_path if create_invoice_path.startswith("/") else f"/{create_invoice_path}"
+        self.success_url = success_url
+
+    def _extract_invoice_id(self, response_data: dict[str, Any]) -> str | None:
+        candidates = (
+            response_data.get("id"),
+            response_data.get("invoice_id"),
+            response_data.get("transaction_id"),
+            (response_data.get("data") or {}).get("id"),
+            (response_data.get("data") or {}).get("invoice_id"),
+            (response_data.get("result") or {}).get("id"),
+            (response_data.get("result") or {}).get("invoice_id"),
+        )
+        for value in candidates:
+            if value not in (None, ""):
+                return str(value)
+        return None
+
+    def _extract_pay_url(self, response_data: dict[str, Any]) -> str | None:
+        candidates = (
+            response_data.get("url"),
+            response_data.get("pay_url"),
+            response_data.get("payment_url"),
+            response_data.get("checkout_url"),
+            (response_data.get("data") or {}).get("url"),
+            (response_data.get("data") or {}).get("pay_url"),
+            (response_data.get("result") or {}).get("url"),
+            (response_data.get("result") or {}).get("pay_url"),
+        )
+        for value in candidates:
+            if value:
+                return str(value)
+        return None
+
+    async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
+        order_id = payload or f"platega_{user_id}_{int(time.time())}"
+        request_data: dict[str, Any] = {
+            "amount": amount_rub,
+            "currency": "RUB",
+            "orderId": order_id,
+            "description": f"VPN subscription for user {user_id}",
+        }
+        if self.success_url:
+            request_data["successUrl"] = self.success_url
+
+        headers = {
+            "Content-Type": "application/json",
+            "X-MerchantId": self.merchant_id,
+            "X-Secret": self.api_key,
+            "Accept": "application/json",
+        }
+        url = f"{self.base_url}{self.create_invoice_path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=request_data, headers=headers, timeout=30) as resp:
+                response_text = await resp.text()
+                if resp.status >= 400:
+                    raise RuntimeError(f"Platega API error {resp.status}: {response_text}")
+
+                try:
+                    response_data = json.loads(response_text)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(f"Platega invalid JSON response: {response_text}") from exc
+
+        invoice_id = (
+            response_data.get("transactionId")
+            or response_data.get("transaction_id")
+            or self._extract_invoice_id(response_data)
+        )
+        pay_url = response_data.get("redirect") or self._extract_pay_url(response_data)
+        if not invoice_id or not pay_url:
+            raise RuntimeError(f"Platega response missing transactionId/redirect: {response_data}")
+
+        return Invoice(invoice_id=str(invoice_id), pay_url=str(pay_url), amount=float(amount_rub), currency="RUB")
+
+    async def get_status(self, invoice_id: str) -> PaymentStatus:
+        # Статус платежа обновляется через callback/webhook.
+        return PaymentStatus(invoice_id=invoice_id, state="pending")
+
+
 class CryptoCloudProvider:
     """Провайдер для CryptoCloud"""
     
@@ -583,9 +676,15 @@ def get_payment_provider(provider_name: str, settings):
         )
 
     if provider == "platega":
-        if not settings.platega_base_url:
-            raise ValueError("Platega url not configured")
-        return RedirectPaymentProvider(settings.platega_base_url, provider)
+        if not settings.platega_base_url or not settings.platega_shop_id or not settings.platega_api_key:
+            raise ValueError("Platega credentials not configured")
+        return PlategaProvider(
+            base_url=settings.platega_base_url,
+            merchant_id=settings.platega_shop_id,
+            api_key=settings.platega_api_key,
+            create_invoice_path=getattr(settings, "platega_create_invoice_path", "/transaction/process"),
+            success_url=getattr(settings, "platega_success_url", None),
+        )
 
     logger.warning(f"No matching provider found for {provider}, using StubPaymentProvider")
     return StubPaymentProvider()
