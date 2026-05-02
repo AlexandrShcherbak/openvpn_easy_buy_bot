@@ -1,4 +1,4 @@
-# WireGuard VPN Telegram Bot
+# OpenVPN Telegram Bot
 
 Готовая базовая структура для продажи VPN-подписок через Telegram и WireGuard Easy API.
 
@@ -6,7 +6,7 @@
 - Регистрация пользователя в Telegram-боте.
 - Покупка/активация подписки.
 - Генерация WireGuard-конфига по шаблону и выдача `.conf` + QR-кода.
-- Оплата через FreeKassa, Platega, SeverPay, CryptoCloud, CrystalPay, CryptoBot, DonationAlerts, Boosty и СБП (ручная).
+- Оплата через FreeKassa, Platega, SeverPay, CryptoBot, DonationAlerts и СБП (ручная).
 - Команда `/howto` с краткой инструкцией по подключению.
 - Webhook-интеграции для Crypto Bot / донатов / Sendler.
 - Простая админ-панель (`/admin`) со статистикой.
@@ -26,11 +26,6 @@
    # или список:
    ADMIN_IDS=[123456789]
    DATABASE_URL=sqlite+aiosqlite:///./vpn_bot.db
-
-   WIREGUARD_API_URL=https://your-wg-easy-domain
-   WIREGUARD_API_TOKEN=your_api_token
-   WIREGUARD_SERVER_PUBLIC_KEY=server_public_key
-   WIREGUARD_SERVER_ENDPOINT=1.2.3.4:51820
 
    SUPPORT_CONTACT=support@example.com
    SUPPORT_EMAIL=support@example.com
