@@ -45,16 +45,16 @@ async def get_latest_pending_subscription(session: AsyncSession, user_id: int) -
 async def activate_subscription(
     session: AsyncSession,
     subscription: Subscription,
-    wg_client_id: str,
-    wg_client_name: str,
+    vpn_client_id: str,
+    vpn_client_name: str,
     config_path: str,
 ) -> Subscription:
-    now = datetime.now(timezone.utc)  # Исправлено: используем timezone.utc
+    now = datetime.now(timezone.utc)
     subscription.status = 'active'
     subscription.starts_at = now
     subscription.ends_at = now + timedelta(days=subscription.plan_days)
-    subscription.wg_client_id = wg_client_id
-    subscription.wg_client_name = wg_client_name
+    subscription.vpn_client_id = vpn_client_id
+    subscription.vpn_client_name = vpn_client_name
     subscription.config_path = config_path
     await session.commit()
     await session.refresh(subscription)

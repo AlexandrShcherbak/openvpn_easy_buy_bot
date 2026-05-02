@@ -41,15 +41,15 @@ def _build_howto_text() -> str:
     """Текст инструкции по подключению"""
     return (
         '📘 <b>Как подключить VPN за 1 минуту</b>\n\n'
-        '1) Установите WireGuard:\n'
-        '• Android: https://play.google.com/store/apps/details?id=com.wireguard.android\n'
-        '• iOS: https://apps.apple.com/us/app/wireguard/id1441195209\n'
-        '• Windows/macOS/Linux: https://www.wireguard.com/install/\n\n'
+        '1) Установите OpenVPN Connect:\n'
+        '• Android: https://play.google.com/store/apps/details?id=net.openvpn.openvpn\n'
+        '• iOS: https://apps.apple.com/us/app/openvpn-connect/id590379981\n'
+        '• Windows/macOS/Linux: https://openvpn.net/client/\n\n'
         f'2) После оплаты перейдите в бота: {settings.telegram_bot_url}\n'
         '3) Отправьте чек в поддержку.\n'
-        '4) Поддержка выдаст .conf и QR-код в личные сообщения.\n'
-        '5) В приложении WireGuard импортируйте конфиг (или отсканируйте QR).\n'
-        '6) Включите туннель и проверьте IP: https://2ip.ru\n\n'
+        '4) Поддержка выдаст .ovpn файл и QR-код в личные сообщения.\n'
+        '5) В OpenVPN Connect импортируйте .ovpn файл (или отсканируйте QR).\n'
+        '6) Нажмите Connect и проверьте IP: https://2ip.ru\n\n'
         f'Если нужна помощь — {getattr(settings, "support_contact", "@support")}'
     )
 
@@ -78,7 +78,7 @@ async def cmd_start(message: Message) -> None:
             )
         await message.answer(
             '👋 Привет! Это VPN-бот.\n\n'
-            'Я помогу вам подключить быстрый и безопасный VPN через WireGuard.\n'
+            'Я помогу вам подключить быстрый и безопасный VPN через OpenVPN.\n'
             'Выберите действие:',
             reply_markup=get_main_keyboard()
         )

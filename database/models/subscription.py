@@ -15,8 +15,8 @@ class Subscription(Base):
     plan_days: Mapped[int] = mapped_column(Integer)
     price_rub: Mapped[int] = mapped_column(Integer)
 
-    wg_client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    wg_client_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vpn_client_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    vpn_client_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     config_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

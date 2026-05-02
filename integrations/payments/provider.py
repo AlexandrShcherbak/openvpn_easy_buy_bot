@@ -150,7 +150,7 @@ class SeverPayProvider:
         token: str,
         client_email: str | None = None,
         return_url: str | None = None,
-        lifetime_minutes: int | None = None,
+        lifetime_minutes: int = 1440,
     ) -> None:
         self.base_url = base_url.rstrip('/')
         self.mid = mid
@@ -161,245 +161,264 @@ class SeverPayProvider:
         logger.info(f"SeverPayProvider initialized with base_url: {base_url}, mid: {mid}")
 
     def _generate_sign(self, params: dict) -> str:
-        """
-        Генерация подписи для SeverPay согласно документации:
-        1. Сортируем параметры по ключам
-        2. Создаем JSON представление отсортированного массива (ensure_ascii=False, separators=(',', ':'))
-        3. Вычисляем подпись sign с использованием алгоритма HMAC-SHA256 на основе JSON-представления и секретного ключа token
-        """
-        # Убираем sign если он есть
+        """Генерация подписи строго по документации SeverPay."""
         params_copy = {k: v for k, v in params.items() if k != 'sign'}
-        
-        # Сортируем по ключам
         sorted_params = dict(sorted(params_copy.items()))
-        
-        # Создаем JSON представление без пробелов
         json_str = json.dumps(sorted_params, ensure_ascii=False, separators=(',', ':'))
         
-        logger.debug(f"SeverPay JSON for signature: {json_str}")
-        
-        # Вычисляем HMAC-SHA256
         signature = hmac.new(
             self.token.encode('utf-8'),
             json_str.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
         
-        logger.debug(f"SeverPay signature: {signature}")
-        
         return signature
 
     async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
         order_id = payload or f"sp_{user_id}_{int(time.time())}"
-
-        client_email = self.client_email or f"user{user_id}@example.com"
+        client_email = self.client_email or f"user{user_id}@telegram.local"
+        
+        # Важно: amount как число с двумя знаками
+        amount = float(f"{amount_rub:.2f}")
+        
         params = {
             'mid': self.mid,
             'order_id': order_id,
-            'amount': float(amount_rub),
+            'amount': amount,
             'currency': 'RUB',
             'client_id': str(user_id),
             'client_email': client_email,
-            'salt': str(int(time.time()))
+            'salt': str(int(time.time() * 1000)),
+            'lifetime': self.lifetime_minutes,
         }
+        
         if self.return_url:
             params['url_return'] = self.return_url
-        if self.lifetime_minutes and 30 <= self.lifetime_minutes <= 4320:
-            params['lifetime'] = int(self.lifetime_minutes)
-        
-        logger.info(f"Creating SeverPay invoice for user {user_id}, amount: {amount_rub} RUB")
-        logger.debug(f"SeverPay request params: {params}")
         
         # Генерируем подпись
         sign = self._generate_sign(params)
         params['sign'] = sign
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/payin/create",
-                json=params,
-                headers={'Content-Type': 'application/json'},
-                timeout=30,
-            ) as resp:
-                response_text = await resp.text()
-                logger.debug(f"SeverPay response status: {resp.status}")
-                logger.debug(f"SeverPay response body: {response_text}")
-                
-                try:
-                    data = await resp.json(content_type=None)
-                except Exception as e:
-                    logger.error(f"Failed to parse SeverPay response: {e}")
-                    raise RuntimeError(f"SeverPay create payment error: {response_text}")
-                
-                if resp.status != 200:
-                    logger.error(f"SeverPay HTTP error: {resp.status}")
-                    raise RuntimeError(f"SeverPay HTTP error {resp.status}: {response_text}")
-                
-                if not data.get('status'):
-                    logger.error(f"SeverPay API error: {data}")
-                    raise RuntimeError(f"SeverPay create payment error: {data}")
-                
-                if not data.get('data') or not data['data'].get('id'):
-                    logger.error(f"SeverPay response missing data: {data}")
-                    raise RuntimeError(f"SeverPay response missing data: {data}")
-                
-                invoice_id = str(data['data']['id'])
-                pay_url = data['data']['url']
-                
-                logger.info(f"SeverPay invoice created: {invoice_id}")
-                logger.info(f"SeverPay pay URL: {pay_url}")
-                
-                return Invoice(
-                    invoice_id=invoice_id,
-                    pay_url=pay_url,
-                    amount=float(amount_rub),
-                    currency='RUB'
-                )
+        logger.info(f"Creating SeverPay invoice: {params}")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/payin/create",
+                    json=params,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=30,
+                ) as resp:
+                    data = await resp.json()
+                    
+                    logger.info(f"SeverPay response: {data}")
+                    
+                    if not data.get('status'):
+                        raise RuntimeError(f"SeverPay error: {data.get('msg')}")
+                    
+                    return Invoice(
+                        invoice_id=str(data['data']['id']),
+                        pay_url=data['data']['url'],
+                        amount=amount,
+                        currency='RUB'
+                    )
+                    
+        except Exception as e:
+            logger.error(f"SeverPay error: {e}")
+            raise
 
     async def get_status(self, invoice_id: str) -> PaymentStatus:
-        # Формируем параметры для запроса статуса
         params = {
-            'id': str(invoice_id),
             'mid': self.mid,
-            'salt': str(int(time.time()))
+            'id': str(invoice_id),
+            'salt': str(int(time.time() * 1000))
         }
         
-        logger.debug(f"Checking SeverPay status for invoice: {invoice_id}")
-        
-        # Генерируем подпись
         sign = self._generate_sign(params)
         params['sign'] = sign
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self.base_url}/payin/get",
-                json=params,
-                headers={'Content-Type': 'application/json'},
-                timeout=30,
-            ) as resp:
-                try:
-                    data = await resp.json(content_type=None)
-                    logger.debug(f"SeverPay status response: {data}")
-                except Exception as e:
-                    logger.error(f"Failed to parse SeverPay status response: {e}")
-                    return PaymentStatus(invoice_id=invoice_id, state='pending')
-                
-                if resp.status != 200 or not data.get('status'):
-                    logger.warning(f"SeverPay status check failed: {data}")
-                    return PaymentStatus(invoice_id=invoice_id, state='pending')
-                
-                if not data.get('data'):
-                    logger.warning(f"SeverPay status response missing data: {data}")
-                    return PaymentStatus(invoice_id=invoice_id, state='pending')
-                
-                # Маппинг статусов SeverPay
-                status_map = {
-                    0: 'pending',    # ожидает оплаты
-                    1: 'paid',       # оплачен
-                    2: 'canceled',   # отменен
-                    3: 'expired',    # истек
-                }
-                
-                payment_status = data['data'].get('status', 0)
-                status = status_map.get(payment_status, 'pending')
-                
-                logger.info(f"SeverPay payment status for {invoice_id}: {status}")
-                
-                return PaymentStatus(
-                    invoice_id=invoice_id, 
-                    state=status,
-                    amount=data['data'].get('amount'),
-                    currency='RUB'
-                )
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/payin/get",
+                    json=params,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=30,
+                ) as resp:
+                    data = await resp.json()
+                    
+                    if not data.get('status'):
+                        return PaymentStatus(invoice_id=invoice_id, state='pending')
+                    
+                    status_map = {
+                        'new': 'pending',
+                        'process': 'pending',
+                        'success': 'paid',
+                        'decline': 'failed',
+                        'fail': 'failed',
+                    }
+                    
+                    state = status_map.get(data['data'].get('status', 'new'), 'pending')
+                    
+                    return PaymentStatus(
+                        invoice_id=invoice_id,
+                        state=state,
+                        amount=data['data'].get('amount'),
+                        currency='RUB'
+                    )
+                    
+        except Exception as e:
+            logger.error(f"SeverPay status error: {e}")
+            return PaymentStatus(invoice_id=invoice_id, state='pending')
 
 
 class PlategaProvider:
-    """Провайдер для Platega API."""
+    """Провайдер для PlateGa API."""
 
     def __init__(
         self,
-        base_url: str,
         merchant_id: str,
         api_key: str,
-        create_invoice_path: str = "/api/v1/invoices",
+        payment_method: int = 2,  # 2 = СБП (QR-код)
         success_url: str | None = None,
+        fail_url: str | None = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
         self.merchant_id = merchant_id
         self.api_key = api_key
-        self.create_invoice_path = create_invoice_path if create_invoice_path.startswith("/") else f"/{create_invoice_path}"
+        self.payment_method = payment_method
         self.success_url = success_url
-
-    def _extract_invoice_id(self, response_data: dict[str, Any]) -> str | None:
-        candidates = (
-            response_data.get("id"),
-            response_data.get("invoice_id"),
-            response_data.get("transaction_id"),
-            (response_data.get("data") or {}).get("id"),
-            (response_data.get("data") or {}).get("invoice_id"),
-            (response_data.get("result") or {}).get("id"),
-            (response_data.get("result") or {}).get("invoice_id"),
-        )
-        for value in candidates:
-            if value not in (None, ""):
-                return str(value)
-        return None
-
-    def _extract_pay_url(self, response_data: dict[str, Any]) -> str | None:
-        candidates = (
-            response_data.get("url"),
-            response_data.get("pay_url"),
-            response_data.get("payment_url"),
-            response_data.get("checkout_url"),
-            (response_data.get("data") or {}).get("url"),
-            (response_data.get("data") or {}).get("pay_url"),
-            (response_data.get("result") or {}).get("url"),
-            (response_data.get("result") or {}).get("pay_url"),
-        )
-        for value in candidates:
-            if value:
-                return str(value)
-        return None
+        self.fail_url = fail_url
+        self.base_url = "https://app.platega.io"
+        logger.info(f"PlategaProvider initialized with merchant_id: {merchant_id}")
 
     async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
+        """Создание платежа через PlateGa API."""
         order_id = payload or f"platega_{user_id}_{int(time.time())}"
-        request_data: dict[str, Any] = {
-            "amount": amount_rub,
-            "currency": "RUB",
-            "order_id": order_id,
-            "description": f"VPN subscription for user {user_id}",
+        
+        # Формируем запрос согласно документации
+        request_data = {
+            "paymentMethod": self.payment_method,  # 2 = СБП
+            "paymentDetails": {
+                "amount": float(amount_rub),
+                "currency": "RUB"
+            },
+            "description": f"TgId:{user_id}",  # Telegram ID в описании
         }
+        
+        # Добавляем URL для возврата
         if self.success_url:
-            request_data["success_url"] = self.success_url
-
+            request_data["return"] = self.success_url
+        if self.fail_url:
+            request_data["failedUrl"] = self.fail_url
+        if order_id:
+            request_data["payload"] = order_id
+            
+        logger.info(f"Creating PlateGa invoice for user {user_id}, amount: {amount_rub} RUB")
+        logger.debug(f"PlateGa request: {request_data}")
+        
+        # Правильные заголовки авторизации
         headers = {
             "Content-Type": "application/json",
             "X-MerchantId": self.merchant_id,
-            "X-Secret": self.api_key,
+            "X-Secret": self.api_key
         }
-        url = f"{self.base_url}{self.create_invoice_path}"
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=request_data, headers=headers, timeout=30) as resp:
-                response_text = await resp.text()
-                if resp.status >= 400:
-                    raise RuntimeError(f"Platega API error {resp.status}: {response_text}")
-
-                try:
-                    response_data = json.loads(response_text)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(f"Platega invalid JSON response: {response_text}") from exc
-
-        invoice_id = self._extract_invoice_id(response_data)
-        pay_url = self._extract_pay_url(response_data)
-        if not invoice_id or not pay_url:
-            raise RuntimeError(f"Platega response missing invoice_id or pay_url: {response_data}")
-
-        return Invoice(invoice_id=invoice_id, pay_url=pay_url, amount=float(amount_rub), currency="RUB")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{self.base_url}/transaction/process",
+                    json=request_data,
+                    headers=headers,
+                    timeout=30
+                ) as resp:
+                    response_text = await resp.text()
+                    logger.debug(f"PlateGa response status: {resp.status}")
+                    logger.debug(f"PlateGa response body: {response_text}")
+                    
+                    if resp.status != 200:
+                        logger.error(f"PlateGa HTTP error: {resp.status}")
+                        raise RuntimeError(f"PlateGa API error {resp.status}: {response_text}")
+                    
+                    try:
+                        data = json.loads(response_text)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse PlateGa response: {e}")
+                        raise RuntimeError(f"PlateGa invalid JSON response: {response_text}")
+                    
+                    # Получаем ID транзакции и ссылку для оплаты
+                    transaction_id = data.get("transactionId")
+                    redirect_url = data.get("redirect")
+                    
+                    if not transaction_id:
+                        logger.error(f"PlateGa response missing transactionId: {data}")
+                        raise RuntimeError(f"PlateGa response missing transactionId")
+                    
+                    if not redirect_url:
+                        logger.error(f"PlateGa response missing redirect URL: {data}")
+                        raise RuntimeError(f"PlateGa response missing redirect URL")
+                    
+                    logger.info(f"PlateGa invoice created: {transaction_id}")
+                    logger.info(f"PlateGa redirect URL: {redirect_url}")
+                    
+                    return Invoice(
+                        invoice_id=transaction_id,
+                        pay_url=redirect_url,
+                        amount=float(amount_rub),
+                        currency='RUB'
+                    )
+                    
+        except aiohttp.ClientError as e:
+            logger.error(f"PlateGa connection error: {e}")
+            raise RuntimeError(f"PlateGa connection error: {e}")
+        except Exception as e:
+            logger.error(f"PlateGa unexpected error: {e}")
+            raise
 
     async def get_status(self, invoice_id: str) -> PaymentStatus:
-        # Статус платежа обновляется через callback/webhook.
-        return PaymentStatus(invoice_id=invoice_id, state="pending")
+        """Проверка статуса платежа через PlateGa API."""
+        headers = {
+            "X-MerchantId": self.merchant_id,
+            "X-Secret": self.api_key
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.base_url}/transaction/{invoice_id}",
+                    headers=headers,
+                    timeout=30
+                ) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"PlateGa status check failed: {resp.status}")
+                        return PaymentStatus(invoice_id=invoice_id, state='pending')
+                    
+                    data = await resp.json()
+                    
+                    # Маппинг статусов PlateGa
+                    status_map = {
+                        "PENDING": "pending",
+                        "CONFIRMED": "paid",
+                        "CANCELED": "canceled",
+                        "CHARGEBACKED": "failed",
+                    }
+                    
+                    plate_status = data.get("status", "PENDING")
+                    state = status_map.get(plate_status, "pending")
+                    
+                    payment_details = data.get("paymentDetails", {})
+                    amount = payment_details.get("amount") if isinstance(payment_details, dict) else None
+                    currency = payment_details.get("currency") if isinstance(payment_details, dict) else "RUB"
+                    
+                    return PaymentStatus(
+                        invoice_id=invoice_id,
+                        state=state,
+                        amount=amount,
+                        currency=currency
+                    )
+                    
+        except Exception as e:
+            logger.error(f"PlateGa status check error: {e}")
+            return PaymentStatus(invoice_id=invoice_id, state='pending')
 
 
 class CryptoCloudProvider:
@@ -627,7 +646,9 @@ def get_payment_provider(provider_name: str, settings):
     if provider == "severpay":
         if not settings.severpay_mid or not settings.severpay_token:
             raise ValueError("SeverPay credentials not configured")
+    
         logger.info(f"Creating SeverPayProvider with mid: {settings.severpay_mid}")
+    
         return SeverPayProvider(
             settings.severpay_base_url,
             settings.severpay_mid,
@@ -692,14 +713,18 @@ def get_payment_provider(provider_name: str, settings):
         )
 
     if provider == "platega":
-        if not settings.platega_base_url or not settings.platega_shop_id or not settings.platega_api_key:
+        if not settings.platega_shop_id or not settings.platega_api_key:
             raise ValueError("Platega credentials not configured")
+    
+        # Получаем payment_method из настроек или используем 2 (СБП)
+        payment_method = getattr(settings, 'platega_payment_method', 2)
+    
         return PlategaProvider(
-            base_url=settings.platega_base_url,
             merchant_id=settings.platega_shop_id,
             api_key=settings.platega_api_key,
-            create_invoice_path=getattr(settings, "platega_create_invoice_path", "/api/v1/invoices"),
+            payment_method=payment_method,
             success_url=getattr(settings, "platega_success_url", None),
+            fail_url=getattr(settings, "platega_fail_url", None),
         )
 
     logger.warning(f"No matching provider found for {provider}, using StubPaymentProvider")

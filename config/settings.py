@@ -65,10 +65,7 @@ class Settings(BaseSettings):
 
     database_url: str = Field(default='sqlite+aiosqlite:///./vpn_bot.db', env='DATABASE_URL')
 
-    wireguard_api_url: str = Field(..., env='WIREGUARD_API_URL')
-    wireguard_api_token: str = Field(..., env='WIREGUARD_API_TOKEN')
-    wireguard_server_public_key: str = Field(..., env='WIREGUARD_SERVER_PUBLIC_KEY')
-    wireguard_server_endpoint: str = Field(..., env='WIREGUARD_SERVER_ENDPOINT')
+    openvpn_pool_dir: str = Field(default='storage/configs/pool', env='OPENVPN_POOL_DIR')
 
     payment_provider: str = Field(default='manual', env='PAYMENT_PROVIDER')
     payment_token: str | None = Field(default=None, env='PAYMENT_TOKEN')
