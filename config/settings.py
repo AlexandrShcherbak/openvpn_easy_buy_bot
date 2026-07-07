@@ -95,13 +95,17 @@ class Settings(BaseSettings):
     platega_create_invoice_path: str = Field(default='/api/v1/invoices', env='PLATEGA_CREATE_INVOICE_PATH')
     platega_success_url: str | None = Field(default=None, env='PLATEGA_SUCCESS_URL')
 
-    # SeverPay
+    # SeverPay (магазин ecom / card)
     severpay_base_url: str = Field(default='https://severpay.io/api/merchant', env='SEVERPAY_BASE_URL')
     severpay_mid: int | None = Field(default=None, env='SEVERPAY_MID')
     severpay_token: str | None = Field(default=None, env='SEVERPAY_TOKEN')
     severpay_client_email: str | None = Field(default=None, env='SEVERPAY_CLIENT_EMAIL')
     severpay_return_url: str | None = Field(default=None, env='SEVERPAY_RETURN_URL')
     severpay_lifetime_minutes: int | None = Field(default=None, env='SEVERPAY_LIFETIME_MINUTES')
+
+    # SeverPay (второй магазин sbp / СБП)
+    severpay_sbp_mid: int | None = Field(default=None, env='SEVERPAY_SBP_MID')
+    severpay_sbp_token: str | None = Field(default=None, env='SEVERPAY_SBP_TOKEN')
 
     # CryptoCloud (оставлен для совместимости, но не используется в UI)
     cryptocloud_base_url: str = Field(default='https://api.cryptocloud.plus/v2', env='CRYPTOCLOUD_BASE_URL')

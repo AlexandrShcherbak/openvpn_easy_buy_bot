@@ -1,3 +1,7 @@
+import hashlib
+import hmac
+import json
+
 from aiohttp import web
 from aiogram import Router
 from sqlalchemy import or_, select
@@ -181,10 +185,95 @@ async def platega_webhook(request: web.Request) -> web.Response:
     return web.json_response({'ok': True})
 
 
+def _verify_severpay_signature(payload: dict, token: str) -> bool:
+    """HMAC-SHA256 по документации SeverPay: подпись считается по JSON
+    всего тела запроса без поля sign, ключи отсортированы."""
+    provided_sign = payload.get('sign', '')
+    if not provided_sign:
+        return False
+    data_copy = {k: v for k, v in payload.items() if k != 'sign'}
+    sorted_data = dict(sorted(data_copy.items()))
+    json_str = json.dumps(sorted_data, ensure_ascii=False, separators=(',', ':'))
+    expected = hmac.new(token.encode('utf-8'), json_str.encode('utf-8'), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, provided_sign)
+
+
+async def severpay_webhook(request: web.Request) -> web.Response:
+    """Внутренний бридж-эндпоинт: n8n принимает вебхук от SeverPay на
+    публичном домене и форвардит сюда с секретом моста в заголовке.
+    Путь /webhooks/severpay/{shop}, shop = 'ecom' или 'sbp' — определяет,
+    каким токеном проверять подпись SeverPay."""
+    if settings.sendler_webhook_secret:
+        bridge_secret = request.headers.get('X-Bridge-Secret')
+        if bridge_secret != settings.sendler_webhook_secret:
+            return web.json_response({'status': False}, status=401)
+
+    shop = request.match_info.get('shop', '')
+    token_by_shop = {
+        'ecom': settings.severpay_token,
+        'sbp': getattr(settings, 'severpay_sbp_token', None),
+    }
+    token = token_by_shop.get(shop)
+    if not token:
+        return web.json_response({'status': False, 'error': 'unknown_shop'}, status=400)
+
+    payload = await request.json()
+
+    if not _verify_severpay_signature(payload, token):
+        for admin_id in settings.admin_ids:
+            await bot.send_message(
+                admin_id,
+                f"⚠️ SeverPay webhook ({shop}): неверная подпись, платёж не зачтён автоматически.\n"
+                f"Данные: {payload.get('data')}\nПроверьте вручную.",
+            )
+        return web.json_response({'status': False, 'error': 'bad_signature'}, status=401)
+
+    if payload.get('type') != 'payin':
+        return web.json_response({'status': True})
+
+    data = payload.get('data', {})
+    if str(data.get('status', '')).lower() != 'success':
+        return web.json_response({'status': True})
+
+    order_id = str(data.get('order_id', ''))
+    invoice_id = str(data.get('id', ''))
+    internal_payment_id = _extract_payment_id_from_order_id(order_id)
+
+    async with SessionLocal() as session:
+        from database.models.payment import Payment
+
+        payment = None
+        if internal_payment_id:
+            payment = await get_payment(session, internal_payment_id)
+
+        if not payment and invoice_id:
+            payment = (
+                await session.execute(
+                    select(Payment).where(
+                        Payment.provider == 'severpay',
+                        Payment.provider_payment_id == invoice_id,
+                    )
+                )
+            ).scalar_one_or_none()
+
+        if not payment or payment.status == 'paid':
+            return web.json_response({'status': True})
+
+        subscription = await get_subscription(session, payment.subscription_id)
+        user_id = payment.user.telegram_id
+        await mark_payment_paid(session, payment.id, invoice_id or order_id)
+
+    if subscription:
+        await _deliver_or_fallback(user_id, subscription)
+
+    return web.json_response({'status': True})
+
+
 async def create_webhook_app() -> web.Application:
     app = web.Application()
     app.router.add_post('/webhooks/cryptobot', cryptobot_webhook)
     app.router.add_post('/webhooks/donation', donation_webhook)
     app.router.add_post('/webhooks/sendler', sendler_webhook)
     app.router.add_post('/webhooks/platega', platega_webhook)
+    app.router.add_post('/webhooks/severpay/{shop}', severpay_webhook)
     return app
