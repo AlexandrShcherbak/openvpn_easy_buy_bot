@@ -3,6 +3,7 @@ from aiogram import Router
 from sqlalchemy import or_, select
 
 from bot.bot_instance import bot
+from bot.services.subscription_delivery import activate_and_deliver_subscription
 from config.config import settings
 from database.crud import get_payment, get_subscription, mark_payment_paid
 from database.db import SessionLocal
@@ -20,6 +21,28 @@ def _extract_payment_id_from_order_id(order_id: str | None) -> int | None:
         return int(order_id.rsplit(":payment:", 1)[-1])
     except ValueError:
         return None
+
+
+async def _deliver_or_fallback(user_id: int, subscription) -> None:
+    """Автовыдача конфига после оплаты. Если пул пуст/ошибка — уведомляем
+    пользователя и админов, чтобы выдали вручную."""
+    try:
+        await activate_and_deliver_subscription(bot, user_id, subscription)
+    except Exception:
+        support_contact = getattr(settings, "support_contact", "@support_bot")
+        await bot.send_message(
+            user_id,
+            "✅ Оплата подтверждена.\n\n"
+            f"🤖 Перейдите в Telegram-бот: {settings.telegram_bot_url}\n"
+            "📩 Отправьте чек в личные сообщения поддержки, чтобы получить конфигурацию и QR-код.\n"
+            f"Контакт поддержки: {support_contact}"
+        )
+        for admin_id in settings.admin_ids:
+            await bot.send_message(
+                admin_id,
+                "⚠️ Не удалось автоматически выдать конфиг после оплаты "
+                f"пользователю {user_id} (пул пуст или ошибка генерации). Выдайте вручную.",
+            )
 
 
 async def cryptobot_webhook(request: web.Request) -> web.Response:
@@ -45,15 +68,8 @@ async def cryptobot_webhook(request: web.Request) -> web.Response:
         user_id = payment.user.telegram_id
         await mark_payment_paid(session, payment.id, invoice_id)
 
-    support_contact = getattr(settings, "support_contact", "@support_bot")
     if subscription:
-        await bot.send_message(
-            user_id,
-            "✅ Оплата подтверждена.\n\n"
-            f"🤖 Перейдите в Telegram-бот: {settings.telegram_bot_url}\n"
-            "📩 Отправьте чек в личные сообщения поддержки, чтобы получить конфигурацию и QR-код.\n"
-            f"Контакт поддержки: {support_contact}"
-        )
+        await _deliver_or_fallback(user_id, subscription)
 
     return web.json_response({'ok': True})
 
@@ -79,15 +95,8 @@ async def donation_webhook(request: web.Request) -> web.Response:
         await mark_payment_paid(session, payment.id, str(payload.get('transaction_id', payment_id)))
         user_id = payment.user.telegram_id
 
-    support_contact = getattr(settings, "support_contact", "@support_bot")
     if subscription:
-        await bot.send_message(
-            user_id,
-            "✅ Оплата подтверждена.\n\n"
-            f"🤖 Перейдите в Telegram-бот: {settings.telegram_bot_url}\n"
-            "📩 Отправьте чек в личные сообщения поддержки, чтобы получить конфигурацию и QR-код.\n"
-            f"Контакт поддержки: {support_contact}"
-        )
+        await _deliver_or_fallback(user_id, subscription)
 
     return web.json_response({'ok': True})
 
@@ -166,15 +175,8 @@ async def platega_webhook(request: web.Request) -> web.Response:
             await session.commit()
             return web.json_response({'ok': True})
 
-    support_contact = getattr(settings, "support_contact", "@support_bot")
     if subscription:
-        await bot.send_message(
-            user_id,
-            "✅ Оплата подтверждена.\n\n"
-            f"🤖 Перейдите в Telegram-бот: {settings.telegram_bot_url}\n"
-            "📩 Отправьте чек в личные сообщения поддержки, чтобы получить конфигурацию и QR-код.\n"
-            f"Контакт поддержки: {support_contact}"
-        )
+        await _deliver_or_fallback(user_id, subscription)
 
     return web.json_response({'ok': True})
 
