@@ -76,12 +76,12 @@ class Settings(BaseSettings):
     support_contact: str = Field(default='support@example.com', env='SUPPORT_CONTACT')
     support_email: str = Field(default='support@example.com', env='SUPPORT_EMAIL')
     owner_contact: str = Field(default='owner@example.com', env='OWNER_CONTACT')
-    telegram_bot_url: str = Field(default='https://t.me/wireguard_easy_buy_bot', env='TELEGRAM_BOT_URL')
+    telegram_bot_url: str = Field(default='https://telegram.me/wireguard_easy_buy_bot', env='TELEGRAM_BOT_URL')
 
     # URLs для документов (обновлены ссылки)
     terms_url: str = Field(default='https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19', env='TERMS_URL')
     privacy_url: str = Field(default='https://telegra.ph/Politika-konfidencialnosti-04-01-26', env='PRIVACY_URL')
-    contacts_url: str = Field(default='https://t.me/alexandrshcherbak', env='CONTACTS_URL')
+    contacts_url: str = Field(default='https://telegram.me/alexandrshcherbak', env='CONTACTS_URL')
 
     # FreeKassa
     freekassa_shop_id: str | None = Field(default=None, env='FREEKASSA_SHOP_ID')
@@ -159,7 +159,7 @@ class Settings(BaseSettings):
         if values.get('TERMS_URL') in ('/terms', 'https://telegra.ph/Polzovatelskoe-soglashenie-08-15-10'):
             values['TERMS_URL'] = 'https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19'
         if values.get('CONTACTS_URL') == '/contacts':
-            values['CONTACTS_URL'] = 'https://t.me/alexandrshcherbak'
+            values['CONTACTS_URL'] = 'https://telegram.me/alexandrshcherbak'
         
         # Для CrystalPay: используем shop_id как auth_login если не задан отдельно
         if not values.get('CRYSTALPAY_AUTH_LOGIN') and values.get('CRYSTALPAY_SHOP_ID'):

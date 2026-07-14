@@ -392,14 +392,14 @@ async def legal_docs(call: CallbackQuery) -> None:
     privacy_url = getattr(settings, 'privacy_url', 'https://telegra.ph/Politika-konfidencialnosti-04-01-26')
     terms_url = getattr(settings, 'terms_url', 'https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19')
     support_email = getattr(settings, 'support_email', 'scherbakalexanders@gmail.com')
-    owner_contact = getattr(settings, 'owner_contact', 'https://t.me/alexandrshcherbak')
-    
+    owner_contact = getattr(settings, 'owner_contact', 'https://telegram.me/alexandrshcherbak')
+
     # Проверяем, что URL начинаются с http:// или https://
     if not privacy_url.startswith(('http://', 'https://')):
         privacy_url = 'https://' + privacy_url.lstrip('/')
     if not terms_url.startswith(('http://', 'https://')):
         terms_url = 'https://' + terms_url.lstrip('/')
-    if owner_contact and not owner_contact.startswith(('http://', 'https://', 'tg://', 't.me/')):
+    if owner_contact and not owner_contact.startswith(('http://', 'https://', 'tg://', 't.me/', 'telegram.me/')):
         owner_contact = 'https://' + owner_contact
     
     # Формируем текст
@@ -421,7 +421,7 @@ async def legal_docs(call: CallbackQuery) -> None:
             [InlineKeyboardButton(text="🔐 Политика конфиденциальности", url=privacy_url)],
             [InlineKeyboardButton(text="📜 Пользовательское соглашение", url=terms_url)],
             [InlineKeyboardButton(text="✉️ Email поддержки", callback_data="support")],
-            [InlineKeyboardButton(text="👤 Контакты владельца", url=owner_contact if owner_contact.startswith(('http://', 'https://')) else "https://t.me/alexandrshcherbak")],
+            [InlineKeyboardButton(text="👤 Контакты владельца", url=owner_contact if owner_contact.startswith(('http://', 'https://')) else "https://telegram.me/alexandrshcherbak")],
             [InlineKeyboardButton(text="⬅️ В меню", callback_data="menu")]
         ]
     )
