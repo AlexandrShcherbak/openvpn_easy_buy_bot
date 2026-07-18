@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import aiohttp
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -63,6 +65,28 @@ def _provider_title(provider_name: str) -> str:
         'donationalerts': 'DonationAlerts',
     }
     return titles.get(provider_name, provider_name)
+
+
+async def _notify_n8n_lead(user_id: int, username: str | None, full_name: str, tariff: str) -> None:
+    """Пишет заявку в тот же n8n-вебхук, что принимает лиды с лендинга, — чтобы
+    пользователи, пришедшие сразу в бота (минуя лендинг), тоже попадали в CRM
+    и получали напоминания через воркфлоу реактивации холодных лидов."""
+    webhook_url = getattr(settings, 'n8n_lead_webhook_url', None)
+    if not webhook_url:
+        return
+    payload = {
+        'name': full_name,
+        'contact': f'@{username}' if username else str(user_id),
+        'tariff': tariff,
+        'service': 'subscription',
+        'telegram_id': user_id,
+        'source': 'bot-direct',
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            await session.post(webhook_url, json=payload, timeout=aiohttp.ClientTimeout(total=5))
+    except Exception as e:
+        logger.warning(f"Failed to notify n8n lead webhook: {e}")
 
 
 @router.message(Command("start"))
@@ -150,6 +174,13 @@ async def buy_sub(call: CallbackQuery) -> None:
                 plan_days=settings.default_plan_days,
                 price_rub=settings.default_plan_price_rub,
             )
+
+        asyncio.create_task(_notify_n8n_lead(
+            user_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name or "Unknown",
+            tariff=f'Подписка — {settings.default_plan_days} дней ({settings.default_plan_price_rub} ₽)',
+        ))
 
         text = (
             f'📦 <b>Подписка на {settings.default_plan_days} дней</b>\n\n'

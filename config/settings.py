@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     owner_contact: str = Field(default='owner@example.com', env='OWNER_CONTACT')
     telegram_bot_url: str = Field(default='https://telegram.me/wireguard_easy_buy_bot', env='TELEGRAM_BOT_URL')
 
+    # n8n — тот же вебхук, что принимает заявки с лендинга (для прогрева/реактивации
+    # пользователей, пришедших сразу в бота, минуя лендинг)
+    n8n_lead_webhook_url: str | None = Field(
+        default='https://n8n.redviberussian.com/webhook/vpn-lead', env='N8N_LEAD_WEBHOOK_URL'
+    )
+
     # URLs для документов (обновлены ссылки)
     terms_url: str = Field(default='https://telegra.ph/Polzovatelskoe-soglashenie-04-01-19', env='TERMS_URL')
     privacy_url: str = Field(default='https://telegra.ph/Politika-konfidencialnosti-04-01-26', env='PRIVACY_URL')
